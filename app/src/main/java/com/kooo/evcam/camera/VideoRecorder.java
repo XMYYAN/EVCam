@@ -227,10 +227,21 @@ public class VideoRecorder {
                     mediaRecorder.stop();
                     isRecording = false;  // 立即更新状态
                     Log.d(TAG, "Camera " + cameraId + " stopped segment " + segmentIndex + ": " + currentFilePath);
+
+                    // 验证并清理损坏的文件
+                    validateAndCleanupFile(currentFilePath);
                 } catch (RuntimeException e) {
                     Log.e(TAG, "Error stopping segment for camera " + cameraId, e);
                     isRecording = false;  // 即使失败也更新状态
-                    // 即使停止失败，也继续尝试下一段
+
+                    // 停止失败，删除损坏的文件
+                    if (currentFilePath != null) {
+                        File file = new File(currentFilePath);
+                        if (file.exists()) {
+                            file.delete();
+                            Log.w(TAG, "Deleted corrupted segment file: " + currentFilePath);
+                        }
+                    }
                 }
                 releaseMediaRecorder();
             }
@@ -290,6 +301,10 @@ public class VideoRecorder {
             isRecording = false;
             waitingForSessionReconfiguration = false;
             releaseMediaRecorder();
+
+            // 验证并清理损坏的文件
+            validateAndCleanupFile(currentFilePath);
+
             currentFilePath = null;
             segmentIndex = 0;
             if (callback != null) {
@@ -310,16 +325,53 @@ public class VideoRecorder {
             }
             isRecording = false;
 
+            // 验证并清理损坏的文件
+            validateAndCleanupFile(currentFilePath);
+
             if (callback != null) {
                 callback.onRecordStop(cameraId);
             }
         } catch (RuntimeException e) {
             Log.e(TAG, "Failed to stop recording for camera " + cameraId, e);
             isRecording = false;
+
+            // 录制失败，删除损坏的文件
+            if (currentFilePath != null) {
+                File file = new File(currentFilePath);
+                if (file.exists()) {
+                    file.delete();
+                    Log.w(TAG, "Deleted corrupted video file: " + currentFilePath);
+                }
+            }
         } finally {
             releaseMediaRecorder();
             currentFilePath = null;
             segmentIndex = 0;
+        }
+    }
+
+    /**
+     * 验证并清理损坏的视频文件
+     */
+    private void validateAndCleanupFile(String filePath) {
+        if (filePath == null) {
+            return;
+        }
+
+        File file = new File(filePath);
+        if (!file.exists()) {
+            return;
+        }
+
+        // 验证文件大小（至少应该有 50KB，否则可能是损坏的视频）
+        final long MIN_VALID_SIZE = 50 * 1024; // 50KB
+        long fileSize = file.length();
+
+        if (fileSize < MIN_VALID_SIZE) {
+            Log.w(TAG, "Video file too small: " + filePath + " (size: " + fileSize + " bytes, minimum: " + MIN_VALID_SIZE + " bytes). Deleting...");
+            file.delete();
+        } else {
+            Log.d(TAG, "Video file validated: " + filePath + " (size: " + (fileSize / 1024) + " KB)");
         }
     }
 

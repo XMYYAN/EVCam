@@ -13,6 +13,24 @@ This is an Android multi-camera recording application that simultaneously captur
 
 ## Build Commands
 
+**IMPORTANT**: The user will handle builds manually. Do NOT attempt to run build commands automatically.
+
+### Manual Build Instructions (for user)
+
+The project requires JDK 17 or higher. A helper script is provided for building with JDK 25:
+
+```bash
+# Build using the provided batch file (sets JAVA_HOME to JDK 25)
+build-with-jdk25.bat
+
+# Or build manually after setting JAVA_HOME
+set JAVA_HOME=C:\Program Files\Java\jdk-25.0.2
+set PATH=%JAVA_HOME%\bin;%PATH%
+gradlew.bat assembleDebug
+```
+
+### Build Commands Reference
+
 ```bash
 # Build debug APK (Windows: use gradlew.bat, Linux/Mac: use ./gradlew)
 gradlew.bat assembleDebug
@@ -32,6 +50,8 @@ gradlew.bat test
 # Run instrumented tests (requires connected device/emulator)
 gradlew.bat connectedAndroidTest
 ```
+
+**Output Location**: `app\build\outputs\apk\debug\app-debug.apk`
 
 ## Development Commands
 

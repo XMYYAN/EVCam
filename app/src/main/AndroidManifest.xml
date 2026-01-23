@@ -18,6 +18,12 @@
     <!-- 网络权限（用于钉钉远程查看） -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 前台服务权限（Android 9+） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- 前台服务摄像头类型（Android 14+） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <!-- 系统窗口权限（允许后台使用摄像头） -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- 声明使用摄像头功能 -->
     <uses-feature android:name="android.hardware.camera" android:required="true" />
@@ -65,6 +71,21 @@
             android:name=".VideoPlayerActivity"
             android:exported="false"
             android:theme="@style/Theme.Cam.Fullscreen" />
+
+        <!-- 透明 Activity（用于后台拍照时让系统认为应用在前台） -->
+        <activity
+            android:name=".TransparentActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance" />
+
+        <!-- 摄像头前台服务（用于后台拍照/录制） -->
+        <service
+            android:name=".CameraForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
     </application>
 
 </manifest>
