@@ -22,12 +22,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- 前台服务类型：摄像头（Android 10+） -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
-    <!-- 唤醒屏幕权限 -->
+    <!-- CPU唤醒锁（保持CPU运行，不亮屏，用于息屏状态下拍照/录制） -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- 悬浮窗权限（绕过后台启动Activity限制，需要用户手动授权） -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- 锁屏状态下显示Activity -->
-    <uses-permission android:name="android.permission.DISABLE_KEYGUARD" />
 
     <!-- 声明使用摄像头功能 -->
     <uses-feature android:name="android.hardware.camera" android:required="true" />
@@ -57,9 +55,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTask"
-            android:showWhenLocked="true"
-            android:turnScreenOn="true">
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

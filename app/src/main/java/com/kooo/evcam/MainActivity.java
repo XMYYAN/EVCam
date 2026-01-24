@@ -13,7 +13,6 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.TextureView;
 import android.view.View;
-import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -1330,18 +1329,6 @@ public class MainActivity extends AppCompatActivity {
         boolean wasInBackground = isInBackground;
         isInBackground = false;
         AppLog.d(TAG, "onResume called, wasInBackground=" + wasInBackground + ", isRecording=" + isRecording);
-        
-        // 设置窗口属性，支持锁屏显示和唤醒屏幕
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true);
-            setTurnScreenOn(true);
-        } else {
-            getWindow().addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON |
-                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD
-            );
-        }
         
         // 返回前台时，检查摄像头连接状态
         if (cameraManager != null && wasInBackground) {

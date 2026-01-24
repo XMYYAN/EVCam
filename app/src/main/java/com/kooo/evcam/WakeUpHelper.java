@@ -1,6 +1,5 @@
 package com.kooo.evcam;
 
-import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
@@ -9,12 +8,13 @@ import android.provider.Settings;
 
 /**
  * 唤醒工具类
- * 用于在后台收到钉钉命令时唤醒屏幕并启动 Activity
+ * 用于在后台收到钉钉命令时保持CPU运行并启动 Activity
+ * 注意：不会亮屏，支持息屏状态下静默拍照/录制
  */
 public class WakeUpHelper {
     private static final String TAG = "WakeUpHelper";
 
-    // 唤醒锁
+    // CPU唤醒锁（不亮屏）
     private static PowerManager.WakeLock wakeLock;
 
     /**
@@ -41,22 +41,11 @@ public class WakeUpHelper {
     }
 
     /**
-     * 检查屏幕是否亮着
+     * 获取CPU唤醒锁（不亮屏）
+     * 确保在息屏状态下CPU保持运行，能够完成拍照/录制
      */
-    public static boolean isScreenOn(Context context) {
-        PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-        if (pm != null) {
-            return pm.isInteractive();
-        }
-        return false;
-    }
-
-    /**
-     * 唤醒屏幕
-     * 持有唤醒锁一段时间，确保屏幕保持亮着
-     */
-    public static void wakeUpScreen(Context context) {
-        AppLog.d(TAG, "Waking up screen...");
+    public static void acquireCpuWakeLock(Context context) {
+        AppLog.d(TAG, "Acquiring CPU wake lock (screen stays off)...");
 
         PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
         if (pm == null) {
@@ -68,19 +57,15 @@ public class WakeUpHelper {
         releaseWakeLock();
 
         // 创建新的唤醒锁
-        // SCREEN_BRIGHT_WAKE_LOCK: 保持屏幕亮（已废弃但仍然有效）
-        // ACQUIRE_CAUSES_WAKEUP: 获取锁时唤醒设备
-        // ON_AFTER_RELEASE: 释放锁后保持屏幕短暂亮着
+        // PARTIAL_WAKE_LOCK: 只保持CPU运行，不亮屏
         wakeLock = pm.newWakeLock(
-                PowerManager.SCREEN_BRIGHT_WAKE_LOCK |
-                PowerManager.ACQUIRE_CAUSES_WAKEUP |
-                PowerManager.ON_AFTER_RELEASE,
+                PowerManager.PARTIAL_WAKE_LOCK,
                 "EVCam:RemoteCommand"
         );
 
-        // 持有唤醒锁 30 秒（足够完成拍照或开始录制）
-        wakeLock.acquire(30000);
-        AppLog.d(TAG, "WakeLock acquired for 30 seconds");
+        // 持有唤醒锁 5 分钟（足够完成拍照或录制+上传）
+        wakeLock.acquire(5 * 60 * 1000);
+        AppLog.d(TAG, "CPU WakeLock acquired for 5 minutes");
     }
 
     /**
@@ -113,8 +98,8 @@ public class WakeUpHelper {
         
         AppLog.d(TAG, "Launching MainActivity with command: " + action);
 
-        // 先唤醒屏幕
-        wakeUpScreen(context);
+        // 获取CPU唤醒锁，确保息屏状态下也能执行
+        acquireCpuWakeLock(context);
 
         // 创建 Intent
         Intent intent = new Intent(context, MainActivity.class);
