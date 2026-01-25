@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "cam"
+rootProject.name = "EVCam"
 include(":app")

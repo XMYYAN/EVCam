@@ -6,6 +6,16 @@ android {
     namespace = "com.kooo.evcam"
     compileSdk = 36
 
+    // 签名配置 (使用 AOSP 公共测试签名)
+    signingConfigs {
+        create("release") {
+            storeFile = file("../keystore/release.jks")
+            storePassword = "android"
+            keyAlias = "apkeasytool"
+            keyPassword = "android"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.kooo.evcam"
         minSdk = 28
@@ -18,6 +28,8 @@ android {
 
     buildTypes {
         release {
+            // 使用签名配置
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

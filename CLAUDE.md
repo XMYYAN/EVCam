@@ -53,6 +53,24 @@ gradlew.bat connectedAndroidTest
 
 **Output Location**: `app\build\outputs\apk\debug\app-debug.apk`
 
+### Release Build & Signing
+
+The project is configured with **AOSP public test signing** for release builds.
+
+```bash
+# Build signed release APK
+gradlew.bat assembleRelease
+
+# Output: app\build\outputs\apk\release\app-release.apk
+```
+
+**For detailed release instructions**, see [RELEASE_GUIDE.md](RELEASE_GUIDE.md).
+
+**Quick release to GitHub**:
+```bash
+release.bat v1.0.0
+```
+
 ## Development Commands
 
 ```bash
