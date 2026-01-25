@@ -75,6 +75,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean isInBackground = false;  // 是否在后台
     private boolean pendingRemoteCommand = false;  // 是否有待处理的远程命令
     private boolean isRemoteWakeUp = false;  // 是否是远程命令唤醒的（用于完成后自动退回后台）
+    private boolean shouldMoveToBackgroundOnReady = false;  // 开机自启动后，窗口准备好时移到后台
 
     // 录制按钮闪烁动画相关
     private android.os.Handler blinkHandler;
@@ -149,16 +150,14 @@ public class MainActivity extends AppCompatActivity {
         // 检查是否是开机自启动
         boolean autoStartFromBoot = getIntent().getBooleanExtra("auto_start_from_boot", false);
         if (autoStartFromBoot) {
-            AppLog.d(TAG, "开机自启动模式：立即移到后台（不显示界面）");
+            AppLog.d(TAG, "开机自启动模式：等待窗口准备好后移到后台");
             
             // 清除标志，避免后续重复检测
             getIntent().removeExtra("auto_start_from_boot");
             
-            // 立即移到后台
-            new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
-                moveTaskToBack(true);
-                AppLog.d(TAG, "开机自启动：已立即移到后台");
-            });
+            // 设置标志，等待 onWindowFocusChanged 时再移到后台
+            // 这确保 Activity 完全初始化后再执行，避免中断初始化过程
+            shouldMoveToBackgroundOnReady = true;
         }
 
         // 检查是否有启动时传入的远程命令（冷启动）
@@ -213,19 +212,34 @@ public class MainActivity extends AppCompatActivity {
 
         // 延迟执行命令，等待摄像头准备好
         // 如果从后台唤醒，摄像头需要时间重新连接
-        int delay = isInBackground ? 2000 : 1500;
+        int delay = isInBackground ? 3000 : 1500;
         
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             pendingRemoteCommand = false;
             
             // 检查摄像头是否准备好
-            if (cameraManager == null || !cameraManager.hasConnectedCameras()) {
-                AppLog.w(TAG, "Cameras not ready, waiting longer...");
-                // 再等待1秒
+            if (cameraManager == null) {
+                AppLog.e(TAG, "CameraManager is null");
+                executeRemoteCommand(action, conversationId, conversationType, userId, duration);
+                return;
+            }
+            
+            int connectedCount = cameraManager.getConnectedCameraCount();
+            AppLog.d(TAG, "Connected cameras: " + connectedCount + "/4");
+            
+            // 如果连接的摄像头少于4个，继续等待
+            if (connectedCount < 4) {
+                AppLog.w(TAG, "Only " + connectedCount + " cameras connected, waiting 1.5s more...");
                 new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                    int finalCount = cameraManager.getConnectedCameraCount();
+                    AppLog.d(TAG, "After waiting, connected cameras: " + finalCount + "/4");
+                    if (finalCount < 4) {
+                        AppLog.w(TAG, "Still only " + finalCount + " cameras ready, executing anyway");
+                    }
                     executeRemoteCommand(action, conversationId, conversationType, userId, duration);
-                }, 1000);
+                }, 1500);
             } else {
+                AppLog.d(TAG, "All 4 cameras ready, executing command");
                 executeRemoteCommand(action, conversationId, conversationType, userId, duration);
             }
         }, delay);
@@ -995,13 +1009,13 @@ public class MainActivity extends AppCompatActivity {
 
         // 第四步：执行拍照（传递统一时间戳）
         cameraManager.takePicture(remoteRecordingTimestamp);
-        AppLog.d(TAG, "远程拍照已执行（拍照间隔300ms，保存间隔2s）");
+        AppLog.d(TAG, "远程拍照已执行（拍照间隔300ms，保存间隔1s）");
 
         // 等待所有摄像头拍照完成后上传
-        // 时间线：拍照(0-0.9s) + 最后保存延迟(6s) + 保存时间(1s) = 8s
+        // 时间线：拍照(0-0.9s) + 最后保存延迟(3s) + 保存时间(1s) = 5s
         new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
             uploadPhotos();
-        }, 8000);  // 等待8秒确保所有照片保存完成
+        }, 5000);  // 等待5秒确保所有照片保存完成
     }
 
     /**

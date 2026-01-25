@@ -575,11 +575,11 @@ public class MultiCameraManager {
 
         AppLog.d(TAG, "Taking picture with " + keys.size() + " camera(s) using timestamp: " + timestamp);
 
-        // 快速拍照，每个摄像头间隔300ms触发拍照，但保存文件时按顺序延迟2秒
+        // 快速拍照，每个摄像头间隔300ms触发拍照，但保存文件时按顺序延迟1秒
         for (int i = 0; i < keys.size(); i++) {
             final String key = keys.get(i);
             final int captureDelay = i * 300;      // 拍照触发延迟：300ms（快速抓拍画面）
-            final int saveDelay = i * 2000;        // 文件保存延迟：2秒（分散磁盘I/O）
+            final int saveDelay = i * 1000;        // 文件保存延迟：1秒（分散磁盘I/O）
 
             mainHandler.postDelayed(() -> {
                 SingleCamera camera = cameras.get(key);
