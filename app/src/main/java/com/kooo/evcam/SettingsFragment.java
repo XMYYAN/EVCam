@@ -40,6 +40,7 @@ public class SettingsFragment extends Fragment {
     private SwitchMaterial keepAliveSwitch;
     private SwitchMaterial preventSleepSwitch;
     private SwitchMaterial recordingStatsSwitch;
+    private SwitchMaterial timestampWatermarkSwitch;
     private AppConfig appConfig;
     
     // 悬浮窗相关
@@ -182,6 +183,22 @@ public class SettingsFragment extends Fragment {
                 if (getActivity() instanceof MainActivity) {
                     ((MainActivity) getActivity()).refreshRecordingStatsSettings();
                 }
+            }
+        });
+
+        // 初始化时间角标开关
+        timestampWatermarkSwitch = view.findViewById(R.id.switch_timestamp_watermark);
+        if (getContext() != null && appConfig != null) {
+            timestampWatermarkSwitch.setChecked(appConfig.isTimestampWatermarkEnabled());
+        }
+
+        // 设置时间角标开关监听器
+        timestampWatermarkSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (getContext() != null && appConfig != null) {
+                appConfig.setTimestampWatermarkEnabled(isChecked);
+                String message = isChecked ? "时间角标已开启" : "时间角标已关闭";
+                Toast.makeText(getContext(), message, Toast.LENGTH_SHORT).show();
+                AppLog.d("SettingsFragment", message);
             }
         });
 

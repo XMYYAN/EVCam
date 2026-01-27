@@ -1,6 +1,7 @@
 package com.kooo.evcam.camera;
 
 
+import com.kooo.evcam.AppConfig;
 import com.kooo.evcam.AppLog;
 import com.kooo.evcam.StorageHelper;
 import android.content.Context;
@@ -976,10 +977,17 @@ public class SingleCamera {
         String position = (cameraPosition != null) ? cameraPosition : cameraId;
         File photoFile = new File(photoDir, timestamp + "_" + position + ".jpg");
 
+        // 检查是否需要添加时间角标
+        android.graphics.Bitmap finalBitmap = bitmap;
+        AppConfig appConfig = new AppConfig(context);
+        if (appConfig.isTimestampWatermarkEnabled()) {
+            finalBitmap = addTimestampWatermark(bitmap, timestamp);
+        }
+
         FileOutputStream output = null;
         try {
             output = new FileOutputStream(photoFile);
-            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, output);
+            finalBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, output);
             output.flush();
             AppLog.d(TAG, "Photo saved: " + photoFile.getAbsolutePath());
         } catch (IOException e) {
@@ -992,6 +1000,71 @@ public class SingleCamera {
                     AppLog.e(TAG, "Failed to close output stream", e);
                 }
             }
+            // 如果创建了新的bitmap用于水印，需要回收
+            if (finalBitmap != bitmap && finalBitmap != null) {
+                finalBitmap.recycle();
+            }
+        }
+    }
+
+    /**
+     * 在Bitmap上添加时间角标
+     * @param originalBitmap 原始图片
+     * @param timestamp 时间戳字符串（格式：yyyyMMdd_HHmmss）
+     * @return 带有时间角标的新Bitmap
+     */
+    private android.graphics.Bitmap addTimestampWatermark(android.graphics.Bitmap originalBitmap, String timestamp) {
+        try {
+            // 创建可编辑的副本
+            android.graphics.Bitmap mutableBitmap = originalBitmap.copy(android.graphics.Bitmap.Config.ARGB_8888, true);
+            android.graphics.Canvas canvas = new android.graphics.Canvas(mutableBitmap);
+
+            // 将时间戳转换为可读格式：yyyyMMdd_HHmmss -> yyyy-MM-dd HH:mm:ss
+            String displayTime;
+            try {
+                java.text.SimpleDateFormat inputFormat = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
+                java.text.SimpleDateFormat outputFormat = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+                java.util.Date date = inputFormat.parse(timestamp);
+                displayTime = outputFormat.format(date);
+            } catch (Exception e) {
+                // 解析失败，使用当前时间
+                displayTime = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new java.util.Date());
+            }
+
+            // 根据图片宽度动态计算字体大小（约为图片宽度的3%）
+            float textSize = mutableBitmap.getWidth() * 0.03f;
+            if (textSize < 16) textSize = 16;  // 最小16像素
+            if (textSize > 48) textSize = 48;  // 最大48像素
+
+            // 设置画笔 - 阴影效果
+            android.graphics.Paint shadowPaint = new android.graphics.Paint();
+            shadowPaint.setColor(android.graphics.Color.BLACK);
+            shadowPaint.setTextSize(textSize);
+            shadowPaint.setAntiAlias(true);
+            shadowPaint.setTypeface(android.graphics.Typeface.MONOSPACE);
+
+            // 设置画笔 - 主文字
+            android.graphics.Paint textPaint = new android.graphics.Paint();
+            textPaint.setColor(android.graphics.Color.WHITE);
+            textPaint.setTextSize(textSize);
+            textPaint.setAntiAlias(true);
+            textPaint.setTypeface(android.graphics.Typeface.MONOSPACE);
+
+            // 计算位置（左上角，留一定边距）
+            float x = textSize * 0.5f;
+            float y = textSize * 1.2f;
+
+            // 绘制阴影（偏移2像素）
+            canvas.drawText(displayTime, x + 2, y + 2, shadowPaint);
+            // 绘制主文字
+            canvas.drawText(displayTime, x, y, textPaint);
+
+            AppLog.d(TAG, "Camera " + cameraId + " added timestamp watermark: " + displayTime);
+            return mutableBitmap;
+
+        } catch (Exception e) {
+            AppLog.e(TAG, "Camera " + cameraId + " failed to add timestamp watermark", e);
+            return originalBitmap;  // 失败时返回原图
         }
     }
 

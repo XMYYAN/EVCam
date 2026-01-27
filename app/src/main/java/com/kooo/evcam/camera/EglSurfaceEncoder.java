@@ -1,6 +1,11 @@
 package com.kooo.evcam.camera;
 
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.SurfaceTexture;
+import android.graphics.Typeface;
 import android.opengl.EGL14;
 import android.opengl.EGLConfig;
 import android.opengl.EGLContext;
@@ -9,6 +14,7 @@ import android.opengl.EGLExt;
 import android.opengl.EGLSurface;
 import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
+import android.opengl.GLUtils;
 import android.opengl.Matrix;
 import android.view.Surface;
 
@@ -17,6 +23,9 @@ import com.kooo.evcam.AppLog;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 /**
  * EGL/OpenGL 渲染桥接类
@@ -43,7 +52,7 @@ public class EglSurfaceEncoder {
             "    vTextureCoord = (uTexMatrix * aTextureCoord).xy;\n" +
             "}\n";
 
-    // Fragment shader - 使用外部纹理（OES）采样
+    // Fragment shader - 使用外部纹理（OES）采样（无水印版本）
     private static final String FRAGMENT_SHADER =
             "#extension GL_OES_EGL_image_external : require\n" +
             "precision mediump float;\n" +
@@ -51,6 +60,32 @@ public class EglSurfaceEncoder {
             "uniform samplerExternalOES sTexture;\n" +
             "void main() {\n" +
             "    gl_FragColor = texture2D(sTexture, vTextureCoord);\n" +
+            "}\n";
+
+    // Fragment shader - 带时间水印版本
+    private static final String FRAGMENT_SHADER_WITH_WATERMARK =
+            "#extension GL_OES_EGL_image_external : require\n" +
+            "precision mediump float;\n" +
+            "varying vec2 vTextureCoord;\n" +
+            "uniform samplerExternalOES sTexture;\n" +
+            "uniform sampler2D sWatermarkTexture;\n" +
+            "uniform vec4 uWatermarkRect;\n" +  // x, y, width, height (归一化坐标)
+            "void main() {\n" +
+            "    vec4 videoColor = texture2D(sTexture, vTextureCoord);\n" +
+            "    // 检查是否在水印区域内\n" +
+            "    if (vTextureCoord.x >= uWatermarkRect.x && vTextureCoord.x <= uWatermarkRect.x + uWatermarkRect.z &&\n" +
+            "        vTextureCoord.y >= uWatermarkRect.y && vTextureCoord.y <= uWatermarkRect.y + uWatermarkRect.w) {\n" +
+            "        // 计算水印纹理坐标\n" +
+            "        vec2 watermarkCoord = vec2(\n" +
+            "            (vTextureCoord.x - uWatermarkRect.x) / uWatermarkRect.z,\n" +
+            "            (vTextureCoord.y - uWatermarkRect.y) / uWatermarkRect.w\n" +
+            "        );\n" +
+            "        vec4 watermarkColor = texture2D(sWatermarkTexture, watermarkCoord);\n" +
+            "        // Alpha 混合\n" +
+            "        gl_FragColor = mix(videoColor, watermarkColor, watermarkColor.a);\n" +
+            "    } else {\n" +
+            "        gl_FragColor = videoColor;\n" +
+            "    }\n" +
             "}\n";
 
     // 顶点坐标（全屏四边形）
@@ -103,6 +138,23 @@ public class EglSurfaceEncoder {
     private boolean isInitialized = false;
     private boolean isReleased = false;
 
+    // 时间水印相关
+    private boolean watermarkEnabled = false;
+    private int watermarkProgram;
+    private int watermarkTextureId;
+    private int watermarkTextureHandle;
+    private int watermarkRectHandle;
+    private int watermarkPositionHandle;
+    private int watermarkTexCoordHandle;
+    private int watermarkMvpMatrixHandle;
+    private int watermarkTexMatrixHandle;
+    private int watermarkOesTextureHandle;
+    private Bitmap watermarkBitmap;
+    private String lastWatermarkTime = "";
+    private static final int WATERMARK_WIDTH = 320;   // 水印纹理宽度
+    private static final int WATERMARK_HEIGHT = 40;   // 水印纹理高度
+    private final SimpleDateFormat watermarkDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+
     public EglSurfaceEncoder(String cameraId, int width, int height) {
         this.cameraId = cameraId;
         this.width = width;
@@ -153,6 +205,27 @@ public class EglSurfaceEncoder {
     }
 
     /**
+     * 设置是否启用时间水印
+     * @param enabled true 表示启用水印
+     */
+    public void setWatermarkEnabled(boolean enabled) {
+        this.watermarkEnabled = enabled;
+        AppLog.d(TAG, "Camera " + cameraId + " Watermark " + (enabled ? "enabled" : "disabled"));
+        
+        // 如果已初始化且启用水印，需要初始化水印相关资源
+        if (isInitialized && enabled && watermarkProgram == 0) {
+            initWatermarkGl();
+        }
+    }
+
+    /**
+     * 检查是否启用了时间水印
+     */
+    public boolean isWatermarkEnabled() {
+        return watermarkEnabled;
+    }
+
+    /**
      * 渲染一帧到输出 Surface
      * 应该在 SurfaceTexture.onFrameAvailable 回调中调用
      * @param presentationTimeNs 帧的呈现时间（纳秒）
@@ -182,41 +255,102 @@ public class EglSurfaceEncoder {
             GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
 
-            // 使用着色器程序
-            GLES20.glUseProgram(program);
-            checkGlError("glUseProgram");
-
-            // 绑定纹理
-            GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
-            GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId);
-
-            // 设置 uniform 变量
-            GLES20.glUniformMatrix4fv(mvpMatrixHandle, 1, false, mvpMatrix, 0);
-            GLES20.glUniformMatrix4fv(texMatrixHandle, 1, false, texMatrix, 0);
-            GLES20.glUniform1i(textureHandle, 0);
-
-            // 设置顶点属性
-            GLES20.glEnableVertexAttribArray(positionHandle);
-            GLES20.glVertexAttribPointer(positionHandle, 2, GLES20.GL_FLOAT, false, 0, vertexBuffer);
-
-            GLES20.glEnableVertexAttribArray(texCoordHandle);
-            GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 0, texCoordBuffer);
-
-            // 绘制
-            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
-            checkGlError("glDrawArrays");
+            // 根据是否启用水印选择不同的渲染路径
+            if (watermarkEnabled && watermarkProgram != 0) {
+                drawFrameWithWatermark();
+            } else {
+                drawFrameWithoutWatermark();
+            }
 
             // 设置呈现时间戳并交换缓冲区
             EGLExt.eglPresentationTimeANDROID(eglDisplay, eglSurface, presentationTimeNs);
             EGL14.eglSwapBuffers(eglDisplay, eglSurface);
 
-            // 禁用顶点属性
-            GLES20.glDisableVertexAttribArray(positionHandle);
-            GLES20.glDisableVertexAttribArray(texCoordHandle);
-
         } catch (Exception e) {
             AppLog.e(TAG, "Camera " + cameraId + " Error drawing frame", e);
         }
+    }
+
+    /**
+     * 无水印渲染
+     */
+    private void drawFrameWithoutWatermark() {
+        // 使用着色器程序
+        GLES20.glUseProgram(program);
+        checkGlError("glUseProgram");
+
+        // 绑定纹理
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId);
+
+        // 设置 uniform 变量
+        GLES20.glUniformMatrix4fv(mvpMatrixHandle, 1, false, mvpMatrix, 0);
+        GLES20.glUniformMatrix4fv(texMatrixHandle, 1, false, texMatrix, 0);
+        GLES20.glUniform1i(textureHandle, 0);
+
+        // 设置顶点属性
+        GLES20.glEnableVertexAttribArray(positionHandle);
+        GLES20.glVertexAttribPointer(positionHandle, 2, GLES20.GL_FLOAT, false, 0, vertexBuffer);
+
+        GLES20.glEnableVertexAttribArray(texCoordHandle);
+        GLES20.glVertexAttribPointer(texCoordHandle, 2, GLES20.GL_FLOAT, false, 0, texCoordBuffer);
+
+        // 绘制
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+        checkGlError("glDrawArrays");
+
+        // 禁用顶点属性
+        GLES20.glDisableVertexAttribArray(positionHandle);
+        GLES20.glDisableVertexAttribArray(texCoordHandle);
+    }
+
+    /**
+     * 带水印渲染
+     */
+    private void drawFrameWithWatermark() {
+        // 更新水印位图（如果时间变化了）
+        updateWatermarkBitmap();
+
+        // 使用水印着色器程序
+        GLES20.glUseProgram(watermarkProgram);
+        checkGlError("glUseProgram watermark");
+
+        // 绑定视频纹理到纹理单元0
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId);
+        GLES20.glUniform1i(watermarkOesTextureHandle, 0);
+
+        // 绑定水印纹理到纹理单元1
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE1);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, watermarkTextureId);
+        GLES20.glUniform1i(watermarkTextureHandle, 1);
+
+        // 设置 uniform 变量
+        GLES20.glUniformMatrix4fv(watermarkMvpMatrixHandle, 1, false, mvpMatrix, 0);
+        GLES20.glUniformMatrix4fv(watermarkTexMatrixHandle, 1, false, texMatrix, 0);
+
+        // 设置水印位置和大小（归一化坐标，左上角）
+        // 水印位置：左上角偏移一点，宽度约为视频宽度的25%
+        float watermarkX = 0.01f;  // 左边距 1%
+        float watermarkY = 0.01f;  // 上边距 1%
+        float watermarkW = (float) WATERMARK_WIDTH / width;   // 水印宽度占比
+        float watermarkH = (float) WATERMARK_HEIGHT / height; // 水印高度占比
+        GLES20.glUniform4f(watermarkRectHandle, watermarkX, watermarkY, watermarkW, watermarkH);
+
+        // 设置顶点属性
+        GLES20.glEnableVertexAttribArray(watermarkPositionHandle);
+        GLES20.glVertexAttribPointer(watermarkPositionHandle, 2, GLES20.GL_FLOAT, false, 0, vertexBuffer);
+
+        GLES20.glEnableVertexAttribArray(watermarkTexCoordHandle);
+        GLES20.glVertexAttribPointer(watermarkTexCoordHandle, 2, GLES20.GL_FLOAT, false, 0, texCoordBuffer);
+
+        // 绘制
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+        checkGlError("glDrawArrays watermark");
+
+        // 禁用顶点属性
+        GLES20.glDisableVertexAttribArray(watermarkPositionHandle);
+        GLES20.glDisableVertexAttribArray(watermarkTexCoordHandle);
     }
 
     /**
@@ -307,6 +441,23 @@ public class EglSurfaceEncoder {
             int[] textures = {textureId};
             GLES20.glDeleteTextures(1, textures, 0);
             textureId = 0;
+        }
+
+        // 释放水印相关资源
+        if (watermarkProgram != 0) {
+            GLES20.glDeleteProgram(watermarkProgram);
+            watermarkProgram = 0;
+        }
+
+        if (watermarkTextureId != 0) {
+            int[] textures = {watermarkTextureId};
+            GLES20.glDeleteTextures(1, textures, 0);
+            watermarkTextureId = 0;
+        }
+
+        if (watermarkBitmap != null) {
+            watermarkBitmap.recycle();
+            watermarkBitmap = null;
         }
 
         // 释放 EGL 资源
@@ -442,6 +593,97 @@ public class EglSurfaceEncoder {
         texCoordBuffer = createFloatBuffer(TEXTURE_COORDS);
 
         AppLog.d(TAG, "Camera " + cameraId + " OpenGL setup complete, textureId=" + textureId);
+    }
+
+    /**
+     * 初始化水印相关的 OpenGL 资源
+     */
+    private void initWatermarkGl() {
+        if (watermarkProgram != 0) {
+            return;  // 已经初始化过了
+        }
+
+        AppLog.d(TAG, "Camera " + cameraId + " Initializing watermark OpenGL resources");
+
+        // 创建带水印的着色器程序
+        watermarkProgram = createProgram(VERTEX_SHADER, FRAGMENT_SHADER_WITH_WATERMARK);
+        if (watermarkProgram == 0) {
+            AppLog.e(TAG, "Camera " + cameraId + " Failed to create watermark shader program");
+            return;
+        }
+
+        // 获取属性位置
+        watermarkPositionHandle = GLES20.glGetAttribLocation(watermarkProgram, "aPosition");
+        watermarkTexCoordHandle = GLES20.glGetAttribLocation(watermarkProgram, "aTextureCoord");
+        watermarkMvpMatrixHandle = GLES20.glGetUniformLocation(watermarkProgram, "uMVPMatrix");
+        watermarkTexMatrixHandle = GLES20.glGetUniformLocation(watermarkProgram, "uTexMatrix");
+        watermarkOesTextureHandle = GLES20.glGetUniformLocation(watermarkProgram, "sTexture");
+        watermarkTextureHandle = GLES20.glGetUniformLocation(watermarkProgram, "sWatermarkTexture");
+        watermarkRectHandle = GLES20.glGetUniformLocation(watermarkProgram, "uWatermarkRect");
+
+        // 创建水印纹理
+        int[] textures = new int[1];
+        GLES20.glGenTextures(1, textures, 0);
+        watermarkTextureId = textures[0];
+
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, watermarkTextureId);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE);
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE);
+
+        // 创建初始水印位图
+        watermarkBitmap = Bitmap.createBitmap(WATERMARK_WIDTH, WATERMARK_HEIGHT, Bitmap.Config.ARGB_8888);
+        updateWatermarkBitmap();
+
+        AppLog.d(TAG, "Camera " + cameraId + " Watermark OpenGL resources initialized, textureId=" + watermarkTextureId);
+    }
+
+    /**
+     * 更新水印位图（每秒调用一次）
+     */
+    private void updateWatermarkBitmap() {
+        if (watermarkBitmap == null) {
+            return;
+        }
+
+        String currentTime = watermarkDateFormat.format(new Date());
+        
+        // 只有时间变化时才更新
+        if (currentTime.equals(lastWatermarkTime)) {
+            return;
+        }
+        lastWatermarkTime = currentTime;
+
+        // 清除位图
+        watermarkBitmap.eraseColor(Color.TRANSPARENT);
+
+        Canvas canvas = new Canvas(watermarkBitmap);
+
+        // 设置画笔 - 阴影
+        Paint shadowPaint = new Paint();
+        shadowPaint.setColor(Color.BLACK);
+        shadowPaint.setTextSize(28);
+        shadowPaint.setAntiAlias(true);
+        shadowPaint.setTypeface(Typeface.MONOSPACE);
+
+        // 设置画笔 - 主文字
+        Paint textPaint = new Paint();
+        textPaint.setColor(Color.WHITE);
+        textPaint.setTextSize(28);
+        textPaint.setAntiAlias(true);
+        textPaint.setTypeface(Typeface.MONOSPACE);
+
+        // 绘制阴影
+        canvas.drawText(currentTime, 6, 30, shadowPaint);
+        // 绘制主文字
+        canvas.drawText(currentTime, 4, 28, textPaint);
+
+        // 上传纹理到 GPU
+        if (watermarkTextureId != 0) {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, watermarkTextureId);
+            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, watermarkBitmap, 0);
+        }
     }
 
     /**

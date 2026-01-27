@@ -664,6 +664,9 @@ public class MultiCameraManager {
             // 设置分段时长
             codecRecorder.setSegmentDuration(segmentDurationMs);
 
+            // 设置时间水印（从配置读取，使用方法开头已创建的 appConfig）
+            codecRecorder.setWatermarkEnabled(appConfig.isTimestampWatermarkEnabled());
+
             // 设置回调
             codecRecorder.setCallback(new RecordCallback() {
                 @Override

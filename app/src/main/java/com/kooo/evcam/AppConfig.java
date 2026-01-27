@@ -43,6 +43,9 @@ public class AppConfig {
     // 录制状态显示配置
     private static final String KEY_RECORDING_STATS_ENABLED = "recording_stats_enabled";  // 录制状态显示开关
     
+    // 时间角标配置
+    private static final String KEY_TIMESTAMP_WATERMARK_ENABLED = "timestamp_watermark_enabled";  // 时间角标开关
+    
     // 分段时长常量（分钟）
     public static final int SEGMENT_DURATION_1_MIN = 1;
     public static final int SEGMENT_DURATION_3_MIN = 3;
@@ -709,5 +712,25 @@ public class AppConfig {
     public boolean isRecordingStatsEnabled() {
         // 默认开启录制状态显示
         return prefs.getBoolean(KEY_RECORDING_STATS_ENABLED, true);
+    }
+    
+    // ==================== 时间角标配置相关方法 ====================
+    
+    /**
+     * 设置时间角标开关
+     * @param enabled true 表示在保存的视频和图片上添加时间角标
+     */
+    public void setTimestampWatermarkEnabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_TIMESTAMP_WATERMARK_ENABLED, enabled).apply();
+        AppLog.d(TAG, "时间角标设置: " + (enabled ? "启用" : "禁用"));
+    }
+    
+    /**
+     * 获取时间角标开关状态
+     * @return true 表示启用时间角标
+     */
+    public boolean isTimestampWatermarkEnabled() {
+        // 默认关闭时间角标
+        return prefs.getBoolean(KEY_TIMESTAMP_WATERMARK_ENABLED, false);
     }
 }

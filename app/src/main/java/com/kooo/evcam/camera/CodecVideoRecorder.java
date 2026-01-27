@@ -96,6 +96,9 @@ public class CodecVideoRecorder {
     // 回调
     private RecordCallback callback;
 
+    // 时间水印设置
+    private boolean watermarkEnabled = false;
+
     // 注意：帧同步变量已移除，帧处理现在直接在 onFrameAvailable 回调中完成
 
     public CodecVideoRecorder(String cameraId, int width, int height) {
@@ -103,6 +106,26 @@ public class CodecVideoRecorder {
         this.width = width;
         this.height = height;
         this.segmentHandler = new Handler(android.os.Looper.getMainLooper());
+    }
+
+    /**
+     * 设置是否启用时间水印
+     * @param enabled true 表示启用水印
+     */
+    public void setWatermarkEnabled(boolean enabled) {
+        this.watermarkEnabled = enabled;
+        // 如果 EGL 编码器已初始化，同步设置
+        if (eglEncoder != null) {
+            eglEncoder.setWatermarkEnabled(enabled);
+        }
+        AppLog.d(TAG, "Camera " + cameraId + " Watermark " + (enabled ? "enabled" : "disabled"));
+    }
+
+    /**
+     * 检查是否启用了时间水印
+     */
+    public boolean isWatermarkEnabled() {
+        return watermarkEnabled;
     }
 
     public void setCallback(RecordCallback callback) {
@@ -239,7 +262,12 @@ public class CodecVideoRecorder {
                     // 设置 EGL 渲染器的输入
                     eglEncoder.setInputSurfaceTexture(inputSurfaceTexture);
 
-                    AppLog.d(TAG, "Camera " + cameraId + " EGL/SurfaceTexture initialized on encoder thread, textureId=" + textureId);
+                    // 设置时间水印（如果启用）
+                    if (watermarkEnabled) {
+                        eglEncoder.setWatermarkEnabled(true);
+                    }
+
+                    AppLog.d(TAG, "Camera " + cameraId + " EGL/SurfaceTexture initialized on encoder thread, textureId=" + textureId + ", watermark=" + watermarkEnabled);
 
                 } catch (Exception e) {
                     AppLog.e(TAG, "Camera " + cameraId + " Failed to initialize EGL on encoder thread", e);
