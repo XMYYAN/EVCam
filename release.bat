@@ -2,6 +2,30 @@
 echo Script starting...
 setlocal enabledelayedexpansion
 
+REM Set JAVA_HOME if not already set
+if "%JAVA_HOME%"=="" (
+    REM Check Eclipse Adoptium (Temurin) JDK
+    for /d %%d in ("C:\Program Files\Eclipse Adoptium\jdk-21*") do (
+        set "JAVA_HOME=%%d"
+    )
+    if "!JAVA_HOME!"=="" for /d %%d in ("C:\Program Files\Eclipse Adoptium\jdk-17*") do (
+        set "JAVA_HOME=%%d"
+    )
+    REM Check Oracle/OpenJDK
+    if "!JAVA_HOME!"=="" if exist "C:\Program Files\Java\jdk-21" set "JAVA_HOME=C:\Program Files\Java\jdk-21"
+    if "!JAVA_HOME!"=="" if exist "C:\Program Files\Java\jdk-17" set "JAVA_HOME=C:\Program Files\Java\jdk-17"
+    if "!JAVA_HOME!"=="" if exist "C:\Program Files\Java\jdk-25.0.2" set "JAVA_HOME=C:\Program Files\Java\jdk-25.0.2"
+    
+    if "!JAVA_HOME!"=="" (
+        echo ERROR: JAVA_HOME not set and no JDK found!
+        echo Please install JDK 17+ or set JAVA_HOME manually.
+        pause
+        exit /b 1
+    )
+    echo [Info] Using JAVA_HOME: !JAVA_HOME!
+)
+set "PATH=%JAVA_HOME%\bin;%PATH%"
+
 set GRADLE_FILE=app\build.gradle.kts
 if not exist "%GRADLE_FILE%" (
     echo ERROR: %GRADLE_FILE% not found!
