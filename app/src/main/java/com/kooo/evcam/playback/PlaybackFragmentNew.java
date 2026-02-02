@@ -377,30 +377,13 @@ public class PlaybackFragmentNew extends Fragment {
         // 先加载视频（此时 singleViewLayout 还是 GONE，用户看不到）
         playerManager.setSingleMode(true, position);
         
-        // 延迟切换界面，等视频加载完成后再显示（带动画）
+        // 延迟切换界面，等视频加载完成后再显示（无动画，直接切换）
         if (multiViewLayout != null) {
             multiViewLayout.postDelayed(() -> {
                 if (isSingleMode) {
-                    // 设置初始状态：稍微缩小 + 透明
-                    singleViewLayout.setAlpha(0f);
-                    singleViewLayout.setScaleX(0.95f);
-                    singleViewLayout.setScaleY(0.95f);
+                    // 直接切换，不做动画（避免透明过渡时看到十字背景）
+                    multiViewLayout.setVisibility(View.GONE);
                     singleViewLayout.setVisibility(View.VISIBLE);
-                    
-                    // 淡入 + 放大到正常大小
-                    singleViewLayout.animate()
-                            .alpha(1f)
-                            .scaleX(1f)
-                            .scaleY(1f)
-                            .setDuration(200)
-                            .setInterpolator(new android.view.animation.DecelerateInterpolator())
-                            .setListener(new android.animation.AnimatorListenerAdapter() {
-                                @Override
-                                public void onAnimationEnd(android.animation.Animator animation) {
-                                    multiViewLayout.setVisibility(View.GONE);
-                                }
-                            })
-                            .start();
                 }
             }, 200);
         }
@@ -415,30 +398,9 @@ public class PlaybackFragmentNew extends Fragment {
         
         playerManager.setSingleMode(false, null);
         
-        // 设置初始状态：稍微缩小 + 透明
-        multiViewLayout.setAlpha(0f);
-        multiViewLayout.setScaleX(0.95f);
-        multiViewLayout.setScaleY(0.95f);
+        // 直接切换，不做动画（避免透明过渡时看到十字背景）
+        singleViewLayout.setVisibility(View.GONE);
         multiViewLayout.setVisibility(View.VISIBLE);
-        
-        // 淡入 + 放大到正常大小
-        multiViewLayout.animate()
-                .alpha(1f)
-                .scaleX(1f)
-                .scaleY(1f)
-                .setDuration(200)
-                .setInterpolator(new android.view.animation.DecelerateInterpolator())
-                .setListener(new android.animation.AnimatorListenerAdapter() {
-                    @Override
-                    public void onAnimationEnd(android.animation.Animator animation) {
-                        singleViewLayout.setVisibility(View.GONE);
-                        // 重置 singleViewLayout 的状态，以便下次使用
-                        singleViewLayout.setAlpha(1f);
-                        singleViewLayout.setScaleX(1f);
-                        singleViewLayout.setScaleY(1f);
-                    }
-                })
-                .start();
     }
 
     /**
