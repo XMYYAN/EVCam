@@ -1,6 +1,9 @@
 package com.kooo.evcam.playback;
 
 import android.content.Context;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
@@ -151,6 +154,9 @@ public class MultiVideoPlayerManager {
                 Log.d(TAG, "Video prepared: " + position);
                 mediaPlayers.put(position, mp);
 
+                // 行车记录仪视频没有声音，设置静音
+                mp.setVolume(0f, 0f);
+
                 // 记录最长时长
                 int videoDuration = mp.getDuration();
                 if (videoDuration > duration) {
@@ -190,6 +196,10 @@ public class MultiVideoPlayerManager {
         if (preparedCount >= totalVideos) {
             isPrepared = true;
             Log.d(TAG, "All videos prepared, duration=" + duration);
+            
+            // 放弃音频焦点，让其他应用（如音乐播放器）继续播放
+            abandonAudioFocus();
+            
             if (playbackListener != null) {
                 playbackListener.onPrepared(duration);
             }
@@ -430,6 +440,29 @@ public class MultiVideoPlayerManager {
     }
 
     /**
+     * 放弃音频焦点，让其他应用（如音乐播放器）继续播放
+     * 行车记录仪视频没有声音，不需要抢占音频焦点
+     */
+    private void abandonAudioFocus() {
+        AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        if (audioManager != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // API 26+ 使用新的 AudioFocusRequest API
+                AudioFocusRequest focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                        .setAudioAttributes(new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_MEDIA)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+                                .build())
+                        .build();
+                audioManager.abandonAudioFocusRequest(focusRequest);
+            } else {
+                // 旧版本 API
+                audioManager.abandonAudioFocus(null);
+            }
+        }
+    }
+
+    /**
      * 设置单路/多路模式
      */
     public void setSingleMode(boolean singleMode, String position) {
@@ -493,7 +526,11 @@ public class MultiVideoPlayerManager {
                 videoSingle.setVideoURI(uri);
                 videoSingle.setOnPreparedListener(mp -> {
                     mediaPlayers.put("single", mp);
+                    // 行车记录仪视频没有声音，设置静音
+                    mp.setVolume(0f, 0f);
                     setMediaPlayerSpeed(mp, currentSpeed);
+                    // 放弃音频焦点
+                    abandonAudioFocus();
                     // 视频准备好后再 seek 和播放
                     mp.seekTo(seekPosition);
                     
